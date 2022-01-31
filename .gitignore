@@ -1,0 +1,14 @@
+*.asm
+*.lst
+*.rel
+*.sym
+*.scc
+*.tmp
+Debug/
+*.ihx
+*.lk
+*.map
+*.noi
+*.vspscc
+*.user
+*.a99
