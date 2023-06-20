@@ -1,0 +1,234 @@
+--- lkrloc3.c.old	2019-04-16 04:04:43.000000000 -0600
++++ lkrloc3.c	2023-06-18 21:36:34.028448900 -0600
+@@ -32,6 +32,8 @@
+ 
+ #include "aslink.h"
+ 
++extern VOID ihxAreaTag(const char *psz);
++
+ /*)Module       lkrloc3.c
+  *
+  *      The module lkrloc3.c contains the functions which
+@@ -46,8 +48,8 @@
+  *              VOID    relerr3()
+  *              VOID    relerp3()
+  *              VOID    reloc3()
+- *              VOID    relp3()
+- *              VOID    relr3()
++ *              int     relp3()			// tursi's fault it's int
++ *              int     relr3()			// tursi's fault it's int
+  *              VOID    relt3()
+  *
+  *      lkrloc3.c the local variable errmsg3[].
+@@ -70,8 +72,8 @@
+  *      called functions:
+  *              int fprintf()           c_library
+  *              VOID    rele3()         lkrloc3.c
+- *              VOID    relp3()         lkrloc3.c
+- *              VOID    relr3()         lkrloc3.c
++ *              int     relp3()         lkrloc3.c   // tursi
++ *              int     relr3()         lkrloc3.c   // tursi
+  *              VOId    relt3()         lkrloc3.c
+  *
+  *      side effects:
+@@ -82,17 +84,24 @@
+ VOID
+ reloc3(int c)
+ {
+-        switch(c) {
++    // these variables are all Tursi hack
++	static char oldaindex[32] = "";
++	int aindex = -1;
++	int outputHdr = 0;
+ 
++        switch(c) {
++            
+         case 'T':
+                 relt3();
+                 break;
+ 
+         case 'R':
+-                relr3();
++                aindex = relr3();
+                 break;
+ 
+         case 'P':
++				// I don't know if this has any meaning at all... doesn't seem to, so don't break it
++                //aindex = relp3();
+                 relp3();
+                 break;
+ 
+@@ -106,6 +115,49 @@
+                 break;
+ 
+         }
++
++		{
++			// TURSI HACK - makes output non-standard, for MakeMegaCart
++			// we need to test the string name, not the index, because
++			// different files can be in different sections but have
++			// the same index when it all comes together - indexes
++			// are LOCAL to the file.
++			// Still a potential bug if a file ends with the same region
++			// name as the next file begins, but they tend to start with GSINIT
++			// and end with GSFINAL (or around that), so should be okay.
++			struct areax **a;
++			/*
++			* Get area list
++			*/
++			a = hp->a_list;
++
++			if ((oldaindex[0] == '\0') && (aindex >= 0)) {
++				outputHdr = 1;
++			} else {
++				if ((aindex >= 0) && (oldaindex >= 0)) {
++//					fprintf(stderr, "HEADERS: %s / %s\n", a[aindex]->a_bap->a_id, oldaindex);
++					if (strcmp(a[aindex]->a_bap->a_id, oldaindex)) {
++						outputHdr = 1;
++					}
++				}
++			}
++
++			if (outputHdr) {
++				// called when a new area is detected to emit the area name
++				if (ofp == NULL) {
++					// should only see this once, at the beginning, the file is opened below.
++					// that's fine, the first section emitted should be in the based of the
++					// multicart (header) anyway. (If it's a banked region, just put something before it)
++					fprintf(stderr, "No FP - skipping emission of #AREA:%s\n", a[aindex]->a_bap->a_id);
++				} else {
++					fprintf(ofp, "#AREA:%s\n", a[aindex]->a_bap->a_id);
++//					fprintf(stderr, "#AREA:%s (%x)\n", a[aindex]->a_bap->a_id, ofp);
++				}
++				strncpy(oldaindex, a[aindex]->a_bap->a_id, 32);
++				oldaindex[31] = '\0';
++			}
++			// end Tursi hack
++		}
+ }
+ 
+ 
+@@ -166,7 +218,7 @@
+         }
+ }
+ 
+-/*)Function     VOID    relr3()
++/*)Function     INT     relr3() - tursi hacked to return aindex (-1 if invalid)
+  *
+  *      The function relr3() evaluates a R line read by
+  *      the linker.  The R line data is combined with the
+@@ -257,7 +309,7 @@
+  *
+  */
+ 
+-VOID
++int
+ relr3(void)
+ {
+         int mode;
+@@ -279,7 +331,7 @@
+         if (eval() != (R3_WORD | R3_AREA) || eval()) {
+                 fprintf(stderr, "R input error\n");
+                 lkerr++;
+-                return;
++                return -1;
+         }
+ 
+         /*
+@@ -289,7 +341,7 @@
+         if (aindex >= hp->h_narea) {
+                 fprintf(stderr, "R area error\n");
+                 lkerr++;
+-                return;
++                return -1;
+         }
+ 
+         /*
+@@ -351,7 +403,7 @@
+                         if (rindex >= hp->h_nsym) {
+                                 fprintf(stderr, "R symbol error\n");
+                                 lkerr++;
+-                                return;
++                                return aindex;
+                         }
+                         reli = symval(s[rindex]);
+                 }
+@@ -365,7 +417,7 @@
+                         if (rindex >= hp->h_narea) {
+                                 fprintf(stderr, "R area error\n");
+                                 lkerr++;
+-                                return;
++                                return aindex;
+                         }
+                         reli = a[rindex]->a_addr;
+                 }
+@@ -673,6 +725,8 @@
+         if (oflag != 0) {
+                 lkout(1);
+         }
++
++        return aindex;
+ }
+ 
+ char *errmsg3[] = {
+@@ -696,7 +750,7 @@
+ };
+ 
+ 
+-/*)Function VOID        relp3()
++/*)Function int        relp3() - hacked by tursi to return aindex
+  *
+  *      The function relp3() evaluates a P line read by
+  *      the linker.  The P line data is combined with the
+@@ -750,7 +804,7 @@
+  *
+  */
+ 
+-VOID
++int
+ relp3()
+ {
+         int aindex, rindex;
+@@ -780,7 +834,7 @@
+         if (aindex >= hp->h_narea) {
+                 fprintf(stderr, "P area error\n");
+                 lkerr++;
+-                return;
++                return -1;
+         }
+ 
+         /*
+@@ -798,14 +852,14 @@
+                         if (rindex >= hp->h_nsym) {
+                                 fprintf(stderr, "P symbol error\n");
+                                 lkerr++;
+-                                return;
++                                return aindex;
+                         }
+                         relv = symval(s[rindex]);
+                 } else {
+                         if (rindex >= hp->h_narea) {
+                                 fprintf(stderr, "P area error\n");
+                                 lkerr++;
+-                                return;
++                                return aindex;
+                         }
+                         relv = a[rindex]->a_addr;
+                 }
+@@ -819,13 +873,15 @@
+         if (aindex >= hp->h_narea) {
+                 fprintf(stderr, "P area error\n");
+                 lkerr++;
+-                return;
++                return aindex;
+         }
+         sdp.s_areax = a[aindex];
+         sdp.s_area = sdp.s_areax->a_bap;
+         sdp.s_addr = adb_2b(0, 4);
+         if (sdp.s_area->a_addr & 0xFF || sdp.s_addr & 0xFF)
+                 relerp3("Page Definition Boundary Error");
++
++        return aindex;
+ }
+ 
+ /*)Function VOID        rele3()
